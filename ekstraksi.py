@@ -28,10 +28,9 @@ def hue_in_range(h, start, end):
     if start <= end:
         return start <= h <= end
     else:
-        # rentang melingkar (misal 350 - 10)
         return h >= start or h <= end
 
-def segmentasi_hue_multi(img, hue_ranges, sat_min=0.2, val_min=0.2):
+def segmentasi_hue_multi(img, hue_ranges, sat_min=0.35, val_min=0.3):
     rgb_array = gambar_ke_array(img)
     mask = []
 
@@ -53,7 +52,7 @@ def segmentasi_hue_multi(img, hue_ranges, sat_min=0.2, val_min=0.2):
         mask.append(baris_mask)
     return mask
 
-def segmentasi_gelap(img, ambang=80):
+def segmentasi_gelap(img, ambang=75):
     gray_mask = []
     rgb_array = gambar_ke_array(img)
     for baris in rgb_array:
@@ -112,10 +111,9 @@ def morfologi_lengkap(mask, kernel_size=3):
     return hasil_close
 
 def segmentasi_overripe_komplit(img):
-    # Rentang warna overripe (oranye-merah-coklat)
-    mask_hue_overripe = segmentasi_hue_multi(img, [(0, 20), (340, 360)], sat_min=0.3, val_min=0.3)
-    mask_gelap = segmentasi_gelap(img, ambang=80)
-    mask_kuning_tua = segmentasi_hue_multi(img, [(40, 90)], sat_min=0.3, val_min=0.3)
+    mask_hue_overripe = segmentasi_hue_multi(img, [(0, 18), (340, 360)], sat_min=0.4, val_min=0.3)
+    mask_gelap = segmentasi_gelap(img, ambang=75)
+    mask_kuning_tua = segmentasi_hue_multi(img, [(38, 60)], sat_min=0.4, val_min=0.3)
 
     mask1 = gabungkan_mask(mask_hue_overripe, mask_gelap)
     mask_total = gabungkan_mask(mask1, mask_kuning_tua)
@@ -244,13 +242,14 @@ def ekstrak_fitur_glcm(glcm):
 def ekstraksi_fitur_dari_gambar(img, label=None):
     img = img.resize((224, 224)).convert("RGB")
     if label == "ripe":
-        mask = segmentasi_hue_multi(img, [(30, 60)])
+        # Rentang hue kuning, saturasi dan value minimal agak ketat
+        mask = segmentasi_hue_multi(img, [(30, 60)], sat_min=0.35, val_min=0.3)
     elif label == "unripe":
-        mask = segmentasi_hue_multi(img, [(70, 130)])
+        # Rentang hue hijau agak ketat supaya tidak tumpang tindih
+        mask = segmentasi_hue_multi(img, [(70, 130)], sat_min=0.35, val_min=0.3)
     elif label == "overripe":
         mask = segmentasi_overripe_komplit(img)
     else:
-        # Default ambil semua piksel (bisa disesuaikan)
         mask = [[1]*img.size[0] for _ in range(img.size[1])]
 
     fitur_warna = ekstraksi_fitur_warna(img, mask)
