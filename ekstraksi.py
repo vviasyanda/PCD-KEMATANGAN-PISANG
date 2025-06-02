@@ -22,6 +22,13 @@ def rgb_ke_hsv_pixel(r, g, b):
 
     return h
 
+def hue_in_range(h, start, end):
+    if start <= end:
+        return start <= h <= end
+    else:
+        # rentang hue yang melingkar, misal 350-10 derajat
+        return h >= start or h <= end
+
 def segmentasi_hue_multi(img, hue_ranges):
     rgb_array = gambar_ke_array(img)
     mask = []
@@ -30,10 +37,11 @@ def segmentasi_hue_multi(img, hue_ranges):
         baris_mask = []
         for r, g, b in baris:
             h = rgb_ke_hsv_pixel(r, g, b)
-            cocok = any(start <= h <= end for (start, end) in hue_ranges)
+            cocok = any(hue_in_range(h, start, end) for (start, end) in hue_ranges)
             baris_mask.append(1 if cocok else 0)
         mask.append(baris_mask)
     return mask
+
 
 def segmentasi_gelap(img, ambang=60):
     gray_mask = []
@@ -242,15 +250,13 @@ def ekstrak_fitur_glcm(glcm):
 def ekstraksi_fitur_dari_gambar(img, label=None):
     img = img.resize((224, 224)).convert("RGB")
     if label == "ripe":
-        mask = segmentasi_hue_multi(img, [(30, 60)])
+        mask = segmentasi_hue_multi(img, [(30, 60)])   # kuning
     elif label == "unripe":
-        mask = segmentasi_hue_multi(img, [(70, 130)])
+        mask = segmentasi_hue_multi(img, [(70, 130)])  # hijau
     elif label == "overripe":
         mask = segmentasi_overripe_komplit(img)
     else:
-        # Default ambil semua piksel (bisa disesuaikan)
         mask = [[1]*img.size[0] for _ in range(img.size[1])]
-
 
     fitur_warna = ekstraksi_fitur_warna(img, mask)
     gray_array = segmentasi_ke_grayscale(img, mask)
@@ -262,3 +268,15 @@ def ekstraksi_fitur_dari_gambar(img, label=None):
         **fitur_glcm
     }
     return fitur
+
+def segmentasi_overripe_komplit(img):
+    mask_hue_overripe = segmentasi_hue_multi(img, [(0, 20), (330, 360)])  # oranye-merah coklat
+    mask_gelap = segmentasi_gelap(img, ambang=80)
+    mask_kuning_tua = segmentasi_hue_multi(img, [(40, 90)])  # kuning tua
+
+    mask1 = gabungkan_mask(mask_hue_overripe, mask_gelap)
+    mask_total = gabungkan_mask(mask1, mask_kuning_tua)
+
+    mask_total_bersih = morfologi_lengkap(mask_total, kernel_size=3)
+    return mask_total_bersih
+
