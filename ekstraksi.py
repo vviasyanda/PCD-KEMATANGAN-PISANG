@@ -1,4 +1,6 @@
-from PIL import Image
+import numpy as np
+import pandas as pd
+from scipy.stats import skew, kurtosis
 
 def gambar_ke_array(img):
     lebar, tinggi = img.size
@@ -22,28 +24,19 @@ def rgb_ke_hsv_pixel(r, g, b):
 
     return h
 
-def hue_in_range(h, start, end):
-    if start <= end:
-        return start <= h <= end
-    else:
-        # rentang hue yang melingkar, misal 350-10 derajat
-        return h >= start or h <= end
-
 def segmentasi_hue_multi(img, hue_ranges):
     rgb_array = gambar_ke_array(img)
     mask = []
-
     for baris in rgb_array:
         baris_mask = []
         for r, g, b in baris:
             h = rgb_ke_hsv_pixel(r, g, b)
-            cocok = any(hue_in_range(h, start, end) for (start, end) in hue_ranges)
+            cocok = any(start <= h <= end for (start, end) in hue_ranges)
             baris_mask.append(1 if cocok else 0)
         mask.append(baris_mask)
     return mask
 
-
-def segmentasi_gelap(img, ambang=60):
+def segmentasi_gelap(img, ambang=80):
     gray_mask = []
     gray_array = gambar_ke_array(img)
     for baris in gray_array:
@@ -112,23 +105,7 @@ def segmentasi_overripe_komplit(img):
     mask_total_bersih = morfologi_lengkap(mask_total, kernel_size=3)
     return mask_total_bersih
 
-def terapkan_mask(img, mask):
-    rgb_array = gambar_ke_array(img)
-    hasil = []
-
-    for i in range(len(mask)):
-        baris_hasil = []
-        for j in range(len(mask[0])):
-            if mask[i][j] == 1:
-                baris_hasil.append(rgb_array[i][j])
-            else:
-                baris_hasil.append((0, 0, 0))
-        hasil.append(baris_hasil)
-    return hasil
-
 def ekstraksi_fitur_warna(img, mask):
-    from scipy.stats import skew, kurtosis
-
     rgb_array = gambar_ke_array(img)
     hue_values = []
     saturation_values = []
@@ -138,28 +115,29 @@ def ekstraksi_fitur_warna(img, mask):
         for j in range(len(mask[0])):
             if mask[i][j] == 1:
                 r, g, b = rgb_array[i][j]
-                r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
-                maks = max(r_norm, g_norm, b_norm)
-                mins = min(r_norm, g_norm, b_norm)
+                r_n, g_n, b_n = r / 255.0, g / 255.0, b / 255.0
+                maks = max(r_n, g_n, b_n)
+                mins = min(r_n, g_n, b_n)
                 delta = maks - mins
 
+                # Hue
                 if delta == 0:
                     h = 0
-                elif maks == r_norm:
-                    h = (60 * ((g_norm - b_norm) / delta) + 360) % 360
-                elif maks == g_norm:
-                    h = (60 * ((b_norm - r_norm) / delta) + 120) % 360
-                elif maks == b_norm:
-                    h = (60 * ((r_norm - g_norm) / delta) + 240) % 360
+                elif maks == r_n:
+                    h = (60 * ((g_n - b_n) / delta) + 360) % 360
+                elif maks == g_n:
+                    h = (60 * ((b_n - r_n) / delta) + 120) % 360
+                elif maks == b_n:
+                    h = (60 * ((r_n - g_n) / delta) + 240) % 360
                 hue_values.append(h)
 
+                # Saturation & Value
                 s = 0 if maks == 0 else delta / maks
                 v = maks
                 saturation_values.append(s)
                 value_values.append(v)
 
     if hue_values:
-        import numpy as np
         rata_rata_hue = np.mean(hue_values)
         stddev_hue = np.std(hue_values)
         skewness_hue = skew(hue_values)
@@ -249,10 +227,11 @@ def ekstrak_fitur_glcm(glcm):
 
 def ekstraksi_fitur_dari_gambar(img, label=None):
     img = img.resize((224, 224)).convert("RGB")
+
     if label == "ripe":
-        mask = segmentasi_hue_multi(img, [(30, 60)])   # kuning
+        mask = segmentasi_hue_multi(img, [(30, 60)])
     elif label == "unripe":
-        mask = segmentasi_hue_multi(img, [(70, 130)])  # hijau
+        mask = segmentasi_hue_multi(img, [(70, 130)])
     elif label == "overripe":
         mask = segmentasi_overripe_komplit(img)
     else:
@@ -269,14 +248,32 @@ def ekstraksi_fitur_dari_gambar(img, label=None):
     }
     return fitur
 
-def segmentasi_overripe_komplit(img):
-    mask_hue_overripe = segmentasi_hue_multi(img, [(0, 20), (330, 360)])  # oranye-merah coklat
-    mask_gelap = segmentasi_gelap(img, ambang=80)
-    mask_kuning_tua = segmentasi_hue_multi(img, [(40, 90)])  # kuning tua
+# Membuat dataframe fitur untuk dataset lengkap
+fitur_semua = []
+for img, label in zip(gambar_resize, label_list):
+    if label not in ("ripe", "unripe", "overripe"):
+        continue
 
-    mask1 = gabungkan_mask(mask_hue_overripe, mask_gelap)
-    mask_total = gabungkan_mask(mask1, mask_kuning_tua)
+    if label == "ripe":
+        mask = segmentasi_hue_multi(img, [(30, 60)])
+    elif label == "unripe":
+        mask = segmentasi_hue_multi(img, [(70, 130)])
+    elif label == "overripe":
+        mask = segmentasi_overripe_komplit(img)
 
-    mask_total_bersih = morfologi_lengkap(mask_total, kernel_size=3)
-    return mask_total_bersih
+    fitur_warna = ekstraksi_fitur_warna(img, mask)
+    gray_array = segmentasi_ke_grayscale(img, mask)
+    glcm = hitung_glcm(gray_array)
+    fitur_glcm = ekstrak_fitur_glcm(glcm)
 
+    fitur = {
+        "Kelas": label,
+        **fitur_warna,
+        "Contrast": fitur_glcm["contrast"],
+        "Energy": fitur_glcm["energy"],
+        "Homogeneity": fitur_glcm["homogeneity"],
+        "Correlation": fitur_glcm["correlation"]
+    }
+    fitur_semua.append(fitur)
+
+df_fitur =_
