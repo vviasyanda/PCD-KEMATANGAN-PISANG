@@ -251,6 +251,7 @@ def ekstraksi_fitur_dari_gambar(img, label=None):
         # Default ambil semua piksel (bisa disesuaikan)
         mask = [[1]*img.size[0] for _ in range(img.size[1])]
 
+
     fitur_warna = ekstraksi_fitur_warna(img, mask)
     gray_array = segmentasi_ke_grayscale(img, mask)
     glcm = hitung_glcm(gray_array)
